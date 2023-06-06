@@ -39,6 +39,7 @@ cover_gap_sub <- cover_gap_sub[ -c(2:19) ]
 #attach fixed variables to ht_wide
 data <- data.frame()
 data <-merge(weed_wide, cover_gap_sub, by = "plot_line")
+
 # GLMM process
 # Step 1 - linear regression
 M1 <- lm(WEED ~ aspect_card + graze + sand + clay + elev_scaled + year, 
