@@ -1,8 +1,4 @@
 **/.Rproj.user/**
-AERO/.ipynb_checkpoints
-AERO/aerodata
-AERO/aeroinputs
-AERO/soil_grids_sand_clay
 *.zip
 *.7z
 *.ini
