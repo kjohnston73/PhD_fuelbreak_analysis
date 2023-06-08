@@ -1,40 +1,45 @@
 ## import libraries
-library(DataExplorer) #
-library(nlme) #
-library(lme4)
+library(DataExplorer) 
+library(nlme) 
+library(lme4) 
 library(MuMIn)
-# library(lme4) #
-# library(emmeans)
-# library(ggplot2) 
-# library(tidyr)
-# library(janitor)
-# library(dplyr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
 
 ## read in csv files
 cover_gap <- read.csv(file = "data/glmm_cover_gap_data.csv")
-# ht_load <- read.csv(file = "data/glmm_ht_load_data.csv")
 
 ## convert integer explanatory variables to factors
 cover_gap$imazapic_binary = factor(cover_gap$imazapic_binary)
 cover_gap$year = factor(cover_gap$year)
 cover_gap$aspect_card = factor(cover_gap$aspect_card)
 cover_gap$graze = factor(cover_gap$graze)
+cover_gap$sand <- cover_gap$sand*100
+cover_gap$clay <- cover_gap$clay*100
 
-# cover_gap$elev_scaled <- cover_gap$ELEVATION - 1000
-
-# ht_load$imazapic_binary = factor(ht_load$imazapic_binary)
-# ht_load$year = factor(ht_load$year)
-# ht_load$aspect_card = factor(ht_load$aspect_card)
-# ht_load$graze = factor(ht_load$graze)
+## calculate percent difference
+cover_gap <- cover_gap %>% 
+  separate(plot,  
+           into = c("plot_num", "plot_let"),
+           sep = 3)
+weed <-data.frame()
+weed <- cover_gap[, c("plot_num", "plot_let", "LineKey", "WEED")]
+weed_wide <- pivot_wider(weed, names_from = "plot_let", values_from = "WEED")
+weed_wide$weed_diff <- weed_wide$G - weed_wide$A
+weed_wide <- weed_wide %>% unite("plot_line", c("plot_num","LineKey"), sep = "_", remove = FALSE)
 
 ## subset data to not grazed and not grazed adjacent
-# data <- subset(ht_load, graze =='N' | graze == 'AN')
-data <- subset(cover_gap, graze =='N' | graze == 'AN')
+cover_gap_sub <- subset(cover_gap, graze =='T' | graze == 'A'| graze == 'N')
+cover_gap_sub <- cover_gap_sub %>% unite("plot_line", c("plot_num","LineKey"), sep = "_", remove = FALSE)
+cover_gap_sub <- cover_gap_sub[ -c(2:19) ]
+#attach fixed variables to ht_wide
+data <- data.frame()
+data <-merge(weed_wide, cover_gap_sub, by = "plot_line")
 
 # GLMM process
 # Step 1 - linear regression
-M1 <- lm(WEED ~ aspect_card + graze + sand + clay + ELEVATION +
-           imazapic_binary + imazapic_months, 
+M1 <- lm(WEED ~ aspect_card + graze + sand + clay + elev_scaled + year, 
          data = data)
 E1 <- rstandard(M1)
 plot(E1, ylab = "standardized residuals")
@@ -44,8 +49,7 @@ summary(M1)
 AIC(M1) # 669.2447
 
 # Step 2 - fit the gls
-M2 <- gls(WEED ~ aspect_card + graze + sand + clay + ELEVATION +
-            imazapic_binary, 
+M2 <- gls(WEED ~ aspect_card + graze + sand + clay + elev_scaled + year, 
           method = "ML", data = data)
 summary(M2)
 AIC(M2) # 669.2447
@@ -62,13 +66,12 @@ for (i in 1:nrow(data)){
 }
 
 ## Step 3/4/5 - add random structures, compare models to find best fit
-M3 <- lmer(WEED ~ aspect_card + graze + sand + clay + ELEVATION +
-            imazapic_binary + (1 | plot), REML = TRUE, data = data)
+M3 <- lmer(WEED ~ aspect_card + graze + sand + clay + elev_scaled + year + (1 | plot), REML = TRUE, data = data)
 
 ## compare gls to random-intercept lme
 anova(M2,M3) # M3 AIC 608.8783 - lower than M2
 summary(M3)
-plot(M3)
+
 
 ## no variable makes sense to use as a random slope, skip
 
@@ -137,21 +140,28 @@ AIC(M3,m3a,m3b,m3c,m3e) # original M3 model has best AIC
 
 #step 7/8
 # summary(M3) # AIC 1180.485
-M3.full <- lmer(WEED ~ aspect_card + graze + sand + clay + ELEVATION +
-                  imazapic_binary + (1 | plot), REML = TRUE, data = data)
+M3.full <- lmer(weed_diff ~ aspect_card + graze + sand + clay + ELEVATION + year + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
 drop1(M3.full)
 #drop aspect
-M3.full <- lmer(WEED ~ graze + sand + clay + ELEVATION +
-                  imazapic_binary + (1 | plot), REML = TRUE, data = data)
+M3.full <- lmer(weed_diff ~ graze + sand + clay + ELEVATION + year + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
+drop1(M3.full)
+#drop year
+M3.full <- lmer(weed_diff ~ graze + sand + clay + ELEVATION + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
+drop1(M3.full)
+#drop clay 
+M3.full <- lmer(weed_diff ~ graze + sand + ELEVATION + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
 drop1(M3.full)
 #drop elevation
-M3.full <- lmer(WEED ~ graze + sand + clay + imazapic_binary + (1 | plot), REML = TRUE, data = data)
+M3.full <- lmer(weed_diff ~ graze + sand + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
 drop1(M3.full)
-#drop imazapic
-M3.full <- lmer(WEED ~ graze + sand + clay + (1 | plot), REML = TRUE, data = data)
-drop1(M3.full)
-#drop sand
-M3.full <- lmer(WEED ~ graze + clay + (1 | plot), REML = TRUE, data = data)
+#drop graze
+M3.full <- lmer(weed_diff ~ sand + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
 drop1(M3.full)
 
 
+#LFB
+weed_fb <- lmer(weed_diff ~ sand + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
+summary(weed_fb)
+plot(resid(weed_fb, type = "deviance"))
+abline(0,0)
+r.squaredGLMM(weed_fb)

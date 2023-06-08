@@ -1,27 +1,23 @@
 # import libraries
-library(DataExplorer) #
-library(nlme) #
-library(lme4) #
-# library(janitor)
+library(DataExplorer) 
+library(nlme) 
+library(lme4) 
+library(MuMIn)
 library(dplyr)
-# library(ggplot2)
+library(ggplot2)
 library(tidyr)
-# library(emmeans)
 
-## read in csv files
-# cover_gap <- read.csv(file = "data/glmm_cover_gap_data.csv")
+
+## read in csv file
 ht_load <- read.csv(file = "data/glmm_ht_load_data.csv")
 
 ## convert integer explanatory variables to factors
-# cover_gap$imazapic_binary = factor(cover_gap$imazapic_binary)
-# cover_gap$year = factor(cover_gap$year)
-# cover_gap$aspect_card = factor(cover_gap$aspect_card)
-# cover_gap$graze = factor(cover_gap$graze)
-
 ht_load$imazapic_binary = factor(ht_load$imazapic_binary)
 ht_load$year = factor(ht_load$year)
 ht_load$aspect_card = factor(ht_load$aspect_card)
 ht_load$graze = factor(ht_load$graze)
+ht_load$sand <- ht_load$sand*100
+ht_load$clay <- ht_load$clay*100
 
 ## calculate percent difference
 ht_load <- ht_load %>% 
@@ -45,8 +41,7 @@ data <-merge(load_wide, ht_load_sub, by = "plot_line")
 
 # GLMM process
 # Step 1 - linear regression
-M1 <- lm(herbload ~ aspect_card + graze + sand + clay + elev_scaled + year + precip + 
-           pdsi_prev_year + pdsi_samp_year + imazapic_binary, 
+M1 <- lm(load_diff ~ aspect_card + graze + sand + clay + ELEVATION + year + imazapic_binary, 
          data = data)
 E1 <- rstandard(M1)
 plot(E1, ylab = "standardized residuals")
@@ -56,8 +51,7 @@ summary(M1)
 AIC(M1) # 4068.025
 
 # Step 2 - fit the gls
-M2 <- gls(herbload ~ aspect_card + graze + sand + clay + elev_scaled + year+ precip + 
-            pdsi_prev_year + pdsi_samp_year + imazapic_binary, 
+M2 <- gls(load_diff ~ aspect_card + graze + sand + clay + ELEVATION + year + imazapic_binary, 
           method = "ML", data = data)
 summary(M2)
 AIC(M2) # 4068.025
@@ -74,8 +68,7 @@ for (i in 1:nrow(data)){
 }
 
 ## Step 3/4/5 - add random structures, compare models to find best fit
-M3 <- lmer(herbload ~ aspect_card + graze + sand + clay + elev_scaled + year + 
-             pdsi_prev_year + imazapic_binary + (1 | plot), REML = TRUE, data = data)
+M3 <- lmer(load_diff ~ aspect_card + graze + sand + clay + ELEVATION + year + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
 ## compare gls to random-intercept lme
 anova(M2,M3) # M3 AIC 1191.468 - lower than M2
 summary(M3)
@@ -85,7 +78,7 @@ summary(M3)
 ## Step 6 - check the residuals, add variance structure if needed
 plot(M3, col = (data$imazapic_binary))#, cex=(data$graze)
 ## smaller variance for smaller fitted values, no clear correlation to any fixed variable
-m3_res<-resid(M3, type = "normalized")
+m3_res<-resid(M3, type = "deviance")
 plot(m3_res)
 abline(0,0)
 
@@ -172,3 +165,73 @@ summary(load_fb)
 plot(resid(load_fb, type = "deviance"))
 abline(0,0)
 r.squaredGLMM(load_fb)
+
+### scatter Plot with clay
+p <- ggplot(data, aes(x=clay, y=load_diff, colour =year)) +
+  theme_classic() +
+  theme(axis.text=element_text(size=20,face="bold"), axis.title=element_text(size=20,face="bold")) +
+  geom_point() +
+  ggtitle("") +
+  xlab("Surface Soil Clay (%)") +
+  ylab("Difference in Herbaceous Load (kg/ha)") +
+  labs(fill = "Year") +
+  geom_smooth(method=lm) +
+  theme_bw(base_size=22) 
+p
+
+
+### 
+load_lme <- lme(load_diff ~ clay +year, random = ~1 | plot_num, method = "ML", data = data)
+newdat <- expand.grid(year=unique(data$year),
+                      clay=c(min(data$clay),
+                             max(data$clay)))
+
+gr <- ref_grid(load_lme, cov.keep= c('clay', 'year'))
+emm <- emmeans(gr, spec= c('clay', 'year'), level= 0.95)
+
+p <- ggplot(data, aes(x=clay, y=load_diff, colour=year)) +
+  # geom_point(size=3) +
+  theme_classic() +
+  theme(axis.text=element_text(size=20,face="bold"), axis.title=element_text(size=20,face="bold")) +
+  geom_ribbon(data= data.frame(emm), aes(ymin= lower.CL, ymax= upper.CL, y= NULL), fill= 'grey80') +
+  geom_line(data=newdat, aes(y=predict(load_lme, level=0, newdata=newdat)), size = 2) +
+  xlab("Surface Soil Clay (Proportion)") +
+  ylab("diff in herbaceous load") +
+  labs(fill = "Year") +
+  theme_bw(base_size=22) 
+p
+
+# diff plot
+# Calculates mean, sd, se and 95% CI
+load3 <- data %>%
+  summarise( 
+    n=n(),
+    mean=mean(load_diff),
+    sd=sd(load_diff)
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1))
+load3$year <- "overall"
+
+load4 <- data %>%
+  group_by(year) %>%
+  summarise( 
+    n=n(),
+    mean=mean(load_diff),
+    sd=sd(load_diff)
+  ) %>%
+  mutate( se=sd/sqrt(n))  %>%
+  mutate( ic=se * qt((1-0.05)/2 + .5, n-1))
+
+load5<- rbind(load3, load4)
+#plot
+load5 %>%
+  ggplot(aes(x=year,y = mean)) + 
+  theme_minimal() +
+  theme(axis.text=element_text(size=16, face="bold"), axis.title=element_text(size=16,face="bold")) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=.3, colour="darkcyan", alpha=1, size=2) +
+  geom_hline(yintercept=0) +
+  geom_point(size = 6, colour = "darkcyan") +
+  scale_x_discrete(labels = c("2021", "2022", "Overall")) +
+  labs(x = NULL, y = "Difference in Herbaceous Load (kg/ha)") +
+  theme(legend.position = "none") 

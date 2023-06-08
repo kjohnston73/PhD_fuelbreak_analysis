@@ -1,38 +1,46 @@
 # import libraries
-library(DataExplorer) #
-library(nlme) #
-library(lme4) #
+library(DataExplorer) 
+library(nlme) 
+library(lme4) 
 library(MuMIn)
-# library(janitor)
-# library(dplyr)
-# library(ggplot2)
-# library(tidyr)
-# library(emmeans)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
 
 ## read in csv files
-# cover_gap <- read.csv(file = "data/glmm_cover_gap_data.csv")
-ht_load <- read.csv(file = "data/glmm_ht_load_data.csv")
+cover_gap <- read.csv(file = "data/glmm_cover_gap_data.csv")
 
 ## convert integer explanatory variables to factors
-# cover_gap$imazapic_binary = factor(cover_gap$imazapic_binary)
-# cover_gap$year = factor(cover_gap$year)
-# cover_gap$aspect_card = factor(cover_gap$aspect_card)
-# cover_gap$graze = factor(cover_gap$graze)
+cover_gap$imazapic_binary = factor(cover_gap$imazapic_binary)
+cover_gap$year = factor(cover_gap$year)
+cover_gap$aspect_card = factor(cover_gap$aspect_card)
+cover_gap$graze = factor(cover_gap$graze)
+cover_gap$sand <- cover_gap$sand*100
+cover_gap$clay <- cover_gap$clay*100
 
-ht_load$imazapic_binary = factor(ht_load$imazapic_binary)
-ht_load$year = factor(ht_load$year)
-ht_load$aspect_card = factor(ht_load$aspect_card)
-ht_load$graze = factor(ht_load$graze)
-
-# ht_load$elev_scaled <- ht_load$ELEVATION - 1000
+## calculate percent difference
+cover_gap <- cover_gap %>% 
+  separate(plot,  
+           into = c("plot_num", "plot_let"),
+           sep = 3)
+iag <-data.frame()
+iag <- cover_gap[, c("plot_num", "plot_let", "LineKey", "IAG")]
+iag_wide <- pivot_wider(iag, names_from = "plot_let", values_from = "IAG")
+iag_wide$iag_diff <- iag_wide$G - iag_wide$A
+iag_wide <- iag_wide %>% unite("plot_line", c("plot_num","LineKey"), sep = "_", remove = FALSE)
 
 ## subset data to not grazed and not grazed adjacent
-data <- subset(ht_load, graze =='A' | graze == 'AA')
+cover_gap_sub <- subset(cover_gap, graze =='T' | graze == 'A'| graze == 'N')
+cover_gap_sub <- cover_gap_sub %>% unite("plot_line", c("plot_num","LineKey"), sep = "_", remove = FALSE)
+cover_gap_sub <- cover_gap_sub[ -c(2:18) ]
+#attach fixed variables to ht_wide
+data <- data.frame()
+data <-merge(iag_wide, cover_gap_sub, by = "plot_line")
 
 # GLMM process
 # Step 1 - linear regression
-M1 <- lm(herbload ~ aspect_card + graze + sand + clay + ELEVATION +
-           imazapic_binary + year + precip + pdsi_prev_year + pdsi_samp_year, 
+M1 <- lm(IAG ~ aspect_card + graze + sand + clay + elev_scaled + year + precip + pdsi_prev_year + imazapic_binary, 
          data = data)
 E1 <- rstandard(M1)
 plot(E1, ylab = "standardized residuals")
@@ -42,8 +50,7 @@ summary(M1)
 AIC(M1) # 4068.025
 
 # Step 2 - fit the gls
-M2 <- gls(herbload ~ aspect_card + graze + sand + clay + ELEVATION +
-            imazapic_binary + year, 
+M2 <- gls(IAG ~ aspect_card + graze + sand + clay + elev_scaled + year, 
           method = "ML", data = data)
 summary(M2)
 AIC(M2) # 4068.025
@@ -60,8 +67,7 @@ for (i in 1:nrow(data)){
 }
 
 ## Step 3/4/5 - add random structures, compare models to find best fit
-M3 <- lmer(herbload ~ aspect_card + graze + sand + clay + ELEVATION +
-             imazapic_binary + year + (1 | plot), REML = TRUE, data = data)
+M3 <- lmer(IAG ~ aspect_card + graze + sand + clay + elev_scaled + year + (1 | plot), REML = TRUE, data = data)
 ## compare gls to random-intercept lme
 anova(M2,M3) # M3 AIC 1191.468 - lower than M2
 summary(M3)
@@ -134,19 +140,22 @@ abline(0,0)
 
 #step 7/8
 # summary(M3) # AIC 1180.485
-M3.full <- lmer(herbload ~ aspect_card + graze + sand + clay + ELEVATION +
-                  imazapic_binary + year + (1 | plot), REML = TRUE, data = data)
-plot(M3.full)
+M3.full <- lmer(iag_diff ~ aspect_card + graze + sand + clay + ELEVATION + year + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
 drop1(M3.full)
-#drop graze 
-M3.full <- lmer(herbload ~ aspect_card + sand + clay + ELEVATION +
-                  imazapic_binary + year + (1 | plot), REML = TRUE, data = data)
-plot(M3.full)
+#drop sand 
+M3.full <- lmer(iag_diff ~ aspect_card + graze + clay + ELEVATION + year + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
 drop1(M3.full)
-## drop clay 
-M3.full <- lmer(herbload ~ aspect_card + sand + ELEVATION +
-                  imazapic_binary + year + (1 | plot), REML = TRUE, data = data)
-plot(M3.full)
+#drop clay
+M3.full <- lmer(iag_diff ~ aspect_card + graze + ELEVATION + year + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
+drop1(M3.full)
+#drop aspect?
+M3.full <- lmer(iag_diff ~ graze + ELEVATION + year + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
 drop1(M3.full)
 
 
+#LFB
+iag_fb <- lmer(iag_diff ~ aspect_card + graze + ELEVATION + year + imazapic_binary + (1 | plot_num), REML = TRUE, data = data)
+summary(iag_fb)
+plot(resid(iag_fb, type = "deviance"))
+abline(0,0)
+r.squaredGLMM(iag_fb)

@@ -1,39 +1,30 @@
-## import libraries
-library(DataExplorer) #
-library(nlme) #
-library(lme4) #
-library(MuMin)
-# library(lmerTest) #
-# library(emmeans)
-# library(ggplot2) 
-# library(tidyr)
-# library(janitor)
-# library(dplyr)
+# import libraries
+library(DataExplorer) 
+library(nlme) 
+library(lme4) 
+library(MuMIn)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
 
 ## read in csv files
-# cover_gap <- read.csv(file = "data/glmm_cover_gap_data.csv")
-ht_load <- read.csv(file = "data/glmm_ht_load_data.csv")
+cover_gap <- read.csv(file = "data/glmm_cover_gap_data.csv")
 
 ## convert integer explanatory variables to factors
-# cover_gap$imazapic_binary = factor(cover_gap$imazapic_binary)
-# cover_gap$year = factor(cover_gap$year)
-# cover_gap$aspect_card = factor(cover_gap$aspect_card)
-# cover_gap$graze = factor(cover_gap$graze)
-
-ht_load$imazapic_binary = factor(ht_load$imazapic_binary)
-ht_load$year = factor(ht_load$year)
-ht_load$aspect_card = factor(ht_load$aspect_card)
-ht_load$graze = factor(ht_load$graze)
-
-# ht_load$elev_scaled <- ht_load$ELEVATION - 1000
+cover_gap$imazapic_binary = factor(cover_gap$imazapic_binary)
+cover_gap$year = factor(cover_gap$year)
+cover_gap$aspect_card = factor(cover_gap$aspect_card)
+cover_gap$graze = factor(cover_gap$graze)
+cover_gap$sand <- cover_gap$sand*100
+cover_gap$clay <- cover_gap$clay*100
 
 ## subset data to not grazed and not grazed adjacent
-data <- subset(ht_load, graze =='N' | graze == 'AN')
+data <- subset(cover_gap, graze == 'A' | graze == 'N')
 
 # GLMM process
 # Step 1 - linear regression
-M1 <- lm(herbload ~ aspect_card + graze + sand + clay + ELEVATION +
-           imazapic_binary + imazapic_months, 
+M1 <- lm(SEEDED ~ aspect_card + graze + sand + clay + ELEVATION + year + precip + pdsi_prev_year + pdsi_samp_year, 
          data = data)
 E1 <- rstandard(M1)
 plot(E1, ylab = "standardized residuals")
@@ -43,8 +34,7 @@ summary(M1)
 AIC(M1) # 4068.025
 
 # Step 2 - fit the gls
-M2 <- gls(herbload ~ aspect_card + graze + sand + clay + ELEVATION +
-            imazapic_binary, 
+M2 <- gls(SEEDED ~ aspect_card + graze + sand + clay + ELEVATION + year, 
           method = "ML", data = data)
 summary(M2)
 AIC(M2) # 4068.025
@@ -61,8 +51,7 @@ for (i in 1:nrow(data)){
 }
 
 ## Step 3/4/5 - add random structures, compare models to find best fit
-M3 <- lmer(herbload ~ aspect_card + graze + sand + clay + ELEVATION +
-            imazapic_binary + (1 | plot), REML = TRUE, data = data)
+M3 <- lmer(SEEDED ~ aspect_card + graze + sand + clay + ELEVATION + year + (1 | plot), REML = TRUE, data = data)
 ## compare gls to random-intercept lme
 anova(M2,M3) # M3 AIC 1191.468 - lower than M2
 summary(M3)
@@ -73,7 +62,7 @@ plot(M3)
 ## Step 6 - check the residuals, add variance structure if needed
 plot(M3, col = (data$imazapic_binary))#, cex=(data$graze)
 ## smaller variance for smaller fitted values, no clear correlation to any fixed variable
-m3_res<-resid(M3, type = "deviance")
+m3_res<-resid(M3, type = "normalized")
 plot(m3_res)
 abline(0,0)
 
@@ -135,19 +124,17 @@ abline(0,0)
 
 #step 7/8
 # summary(M3) # AIC 1180.485
-M3.full <- lmer(herbload ~ aspect_card + graze + sand + clay + ELEVATION +
-                  imazapic_binary + (1 | plot), data = data, REML = TRUE)
-plot(M3.full)
+M3.full <- lmer(SEEDED ~ aspect_card + graze + sand + clay + ELEVATION + year + pdsi_prev_year + imazapic_binary + (1 | plot), REML = TRUE, data = data)
 drop1(M3.full)
-
-#drop aspect_card and go again
-M3.full2 <- lmer(herbload ~ graze + sand + clay + ELEVATION +
-                   imazapic_binary + (1 | plot), data = data, REML = TRUE)
-plot(M3.full2)
-drop1(M3.full2)
-
-r.squaredGLMM(M3.full2)
-
-##
-summary(M3.full2)
-plot(resid(M3.full2, type = "deviance"))
+#drop aspect
+M3.full <- lmer(SEEDED ~ graze + sand + clay + ELEVATION + year + pdsi_prev_year + imazapic_binary +  (1 | plot), REML = TRUE, data = data)
+drop1(M3.full)
+#drop clay 
+M3.full <- lmer(SEEDED ~ graze + sand + ELEVATION + year + pdsi_prev_year + imazapic_binary + (1 | plot), REML = TRUE, data = data)
+drop1(M3.full)
+#drop sand
+M3.full <- lmer(SEEDED ~ graze + ELEVATION + year + pdsi_prev_year + imazapic_binary + (1 | plot), REML = TRUE, data = data)
+drop1(M3.full)
+#drop elevation
+M3.full <- lmer(SEEDED ~ graze + year + pdsi_prev_year + imazapic_binary + (1 | plot), REML = TRUE, data = data)
+drop1(M3.full)

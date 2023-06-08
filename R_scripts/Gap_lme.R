@@ -1,23 +1,22 @@
 ## import libraries
-library(DataExplorer) #
-# library(nlme) #
-library(lme4) #
-# library(emmeans)
-# library(ggplot2) 
-library(tidyr)
+library(DataExplorer) 
+library(nlme) 
+library(lme4) 
 library(MuMIn)
-# library(janitor)
-# library(dplyr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
 
 ## read in csv files
 cover_gap <- read.csv(file = "data/glmm_cover_gap_data.csv")
-# ht_load <- read.csv(file = "data/glmm_ht_load_data.csv")
 
 ## convert integer explanatory variables to factors
 cover_gap$imazapic_binary = factor(cover_gap$imazapic_binary)
 cover_gap$year = factor(cover_gap$year)
 cover_gap$aspect_card = factor(cover_gap$aspect_card)
 cover_gap$graze = factor(cover_gap$graze)
+cover_gap$sand <- cover_gap$sand*100
+cover_gap$clay <- cover_gap$clay*100
 
 ## calculate difference
 cover_gap <- cover_gap %>% 
@@ -39,15 +38,6 @@ cover_gap_sub <- cover_gap_sub[ -c(2:19) ]
 #attach fixed variables to ht_wide
 data <- data.frame()
 data <-merge(gap_mean_wide, cover_gap_sub, by = "plot_line")
-
-# ht_load$imazapic_binary = factor(ht_load$imazapic_binary)
-# ht_load$year = factor(ht_load$year)
-# ht_load$aspect_card = factor(ht_load$aspect_card)
-# ht_load$graze = factor(ht_load$graze)
-
-## subset data to not grazed and not grazed adjacent
-# data <- subset(ht_load, graze =='N' | graze == 'AN')
-# data <- subset(cover_gap, graze =='T' | graze == 'A' | graze == 'N')
 
 # GLMM process
 # Step 1 - linear regression
